@@ -10,3 +10,4 @@ Script om gemakkelijk mijn voorkeursparameters voor ffmpeg in te stellen, vooral
 * ffmpeg, als het kan gecompileerd met libfdk_aac, libxvid, libx264 en libx265
 * ffprobe, ergens op het pad
 * Mijn script [ffprobewaarden](https://github.com/db-inf/ffprobewaarden), ergens op het pad
+* voor uw comfort: mijn scripts voor [externe process controle](https://github.com/db-inf/externe-procescontrole)
