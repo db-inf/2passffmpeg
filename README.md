@@ -3,7 +3,7 @@ Script om gemakkelijk mijn voorkeursparameters voor ffmpeg in te stellen, vooral
 
 ## GEBRUIK:
  `2passffmpeg.sh -h` voor korte help
- `2passffmpeg.sh --help` voor uitgebreidde help
+ `2passffmpeg.sh --help` voor uitgebreide help
 
 ## NODIG:
 * bash
