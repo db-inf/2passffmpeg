@@ -78,27 +78,24 @@ function main()
 		#	$ bash 2passffmpeg ...
 		help
 		[ "$modus_help_optie" != "kort" ] && cat <<-"help"
+		#	- de vorm met "source" of "." is aanbevolen bij herhaalde aanroepen, omdat het process ID deel is van de naam
+		#	 van de statistiek-bestanden uit de 1ste doorgang, die nodig zijn voor de 2de. Als het script niet met "source"
+		#	 wordt uitgevoerd, is dat telkens een andere PID, dus een nieuwe bestandsnaam, en loopt de \tmp schijf vol.
 		#	- De parameters --optie[=waarde] worden vertaald naar ffmpeg opties
-		#	- bronbestand wordt ingevoegd als 1ste invoerbestand in de ffmpeg-opdracht, met een "-i" ervoor.
-		#	- Als het pad naar bronbestand begint met een '-', wordt de optionele '--' ervoor verplicht.
+		#	  - namen van opties mogen verkort worden als dat nog een unieke optie-string geeft
+		#	  - bij opties met een optionele waarde is de '=' verplicht, bij de andere mag het een spatie zijn.
+		#	  - lange optienamen mogen ook met 1 koppelteken geschreven worden, b.v. -help i.p.v. --help (experimenteel!),
+		#	   maar een mogelijke interpretatie als een reeks van 1-letter-opties heeft dan voorrang.
+		#	- Als het pad naar "bronbestand" begint met een '-', wordt de optionele '--' ervoor verplicht.
+		#	- "-i bronbestand" wordt ingevoegd als 1ste invoerbestand in de ffmpeg-opdracht.
 		#	- "-ffmeg-optie [optiewaarde]" en "-i extrabestand" worden letterlijk ingevoegd in de ffmpeg-opdracht, direct
-		#	 na bronbestand, in de opgegeven volgorde.
-		#	  - Deze functionaliteit dubbelt deels met de optie --uitopts.
+		#	 na "bronbestand", in de opgegeven volgorde. Deze functionaliteit dubbelt deels met --uitopts.
 		#	  - Parameters van video- en geluidsspoor worden afgeleid uit "bronbestand", nooit uit "extrabestand". Deze
 		#	   parameters zijn o.a. nodig bij de opties --bronbr, --rasterbr, --ar=[12]k], en zonder de optie --surround.
 		#	  - De vorm "extrabestand", zonder "-i" voor, dient enkel bij gebruik van de --concat parameter, die elk
-		#	   "extrabestand" toevoegt aan de naam van "bronbestand", in het formaat voor het concat protocol dan wel de
-		#	   concat demuxer. Met "--concat=protocol" is geen expliciete -ffmpeg-optie mogelijk, "--concat=demuxer"
-		#	   aanvaardt na "bronbestand" en elk "extrabestand" de andere demuxer-opdrachten zoals "inpoint hh:mm:ss.mmm"
-		#	   en "outpoint hh:mm:ss.mmm" 
-		#	- de 2 eerste vormen zijn aanbevolen, omdat het process ID deel is van de naam van de grote 
-		#	statistiek-bestanden uit de 1ste doorgang, die nodig zijn voor de 2de. Als het script niet met
-		#	de source-opdracht wordt uitgevoerd, is dat telkens een nieuw bestand en loopt de \tmp schijf vol.
-		#	- namen van parameters mogen verkort worden als dat nog een unieke optie-string geeft
-		#	- bij opties met een optionele waarde is de '=' verplicht, bij de andere mag het een spatie zijn
-		#	- lange optienamen mogen ook met 1 koppelteken geschreven worden, b.v. --help OF -help (experimenteel!),
-		#	 maar als de optienaam of zijn gekozen verkorting kan begrepen worden als een reeks 1-letter-opties,
-		#	 dan heeft dat laatste voorrang.
+		#	   "extrabestand" toevoegt na "bronbestand", in het formaat voor het concat protocol dan wel de concat
+		#	   demuxer. Met "--concat" is geen expliciete -ffmpeg-optie mogelijk, maar de concat demuxer aanvaardt na
+		#	   "bronbestand" en elk "extrabestand" directieven als "inpoint hh:mm:ss.mmm" en "outpoint hh:mm:ss.mmm".
 		help
 		cat <<-"help"
 		#
@@ -106,7 +103,7 @@ function main()
 		#	- 1 brondbestand hercomprimeren:
 		#	  $ . 2passffmpeg.sh --doel=/media/ramdisk --vbr=999k --ar=22050 --preset=slow bronbestand
 		#	    --doel=directory : uiteindelijke doeldirectory (tusentijds in /tmp)
-		#	    --vbr=999k video bitrate 999kb/s (default berekend uit pixelraster)
+		#	    --vbr=999k video bitrate 999kb/s (bij ontstentenis berekend uit pixelraster en framerate)
 		#	    --ar=22050 voor herleiding van de bemonsteringssnelheid van geluid tot 22050kHz
 		#	   --preset=slow : gebruikt meer compressie-mogelijkheden dan de default 'medium'
 		#	- een reeks bronbestanden hercomprimeren:
@@ -131,38 +128,41 @@ function main()
 		# voor ffmpeg, op het einde de scripts _slaap* en _uit*, en voor elke ffmpeg-pass de scripts
 		# "_pauze* _pauze1" resp. "_pauze* _pauze2". 
 		#
+		# VOORBEELD
+		#	- een set afleveringen hercomprimeren: de opdracht kan in meerdere shells tegelijk uitgevoerd worden,
+		#	 met elk hun eigen processcontrole door de parameter _pauzeterm1 te veranderen. Elke sessie maakt bij
+		#	 aanvang een leeg bestand aan met de doelnaam (touch), om een claim te leggen op die aflevering.
+		#	  $ epcdir="/media/_hercompressie" ext=mp4; for a in *.{mp4,m4v,avi,mov,wmv,mkv}; do \
+		#	    . "$epcdir/_pauze"* _pauzeterm1; \
+		#	    [ -f "$a" -a ! -f "$epcdir/${a%.*}.$ext" ] || continue; touch "$epcdir/${a%.*}.$ext"; \
+		#	    . ~/Documents/shellscripts/2passffmpeg.sh --doel="$epcdir" --ext="$ext" --bron=105% --raster=105% \
+		#	    --he2 --avbr=2 --ar=1k "$a";
+		#	    done
+		#
 		# Bash variabelen
 		# ===============
 		# Als de onderstaande bash-variabelen gedefiniëerd zijn, worden ze gebruikt in dit script.
-		# OPGELET: tenzij het script wordt uitgevoerd met de opdracht source- of '.', moet de variabele
-		#	geëxporteerd zijn, b.v. $ export epcdir="/media/ramdisk"
-		# - $ffmpeg : pad naar de te gebruiken versie van ffmpeg; default "/media/sdata/WERK/ffmpeg/ffmpeg"
-		# - $epcdir : pad naar de directory met de scripts voor externe procescontrole (zie hoger), default "$doel"
+		# - OPGELET: tenzij het script wordt uitgevoerd met de opdracht source- of '.', moet de variabele
+		#  geëxporteerd zijn, b.v. "export epcdir=/media/ramdisk", of direct in het environment geplaatst:
+		#  "epcdir=/media/ramdisk 2passffmpeg.sh ...". Opgelet: in het 2de geval kan de waarde niet gebruikt
+		#  worden op de opdrachtlijn zelf, want het is geen shell variabele.
+		# - $ffmpeg : pad naar de te gebruiken versie van ffmpeg; default "/opt/ffmpeg-dirk/ffmpeg"
+		# - $epcdir : pad naar de directory met de scripts voor externe procescontrole (zie hoger); default "$doel"
 		# - ${inopts1[@]}, ${inopts2[@]} en ${inopts[@]} : array met ffmpeg-opties te plaatsen voor de "-i invoer"
-		#	van resp. de 1ste, de 2de en elke pass
+		#  van resp. de 1ste, de 2de of elke pass
 		#	- deze opties wordt alleen gebruikt in het script, als de parameter --inopts
 		#	 wordt opgegeven met waarde "1:"  of "2:" voor pass 1 of 2, of zonder waarde voor elke pass.
 		#	- meerdere parameters (zie "Meervoudige parameters"), kunnen soms opgegeven worden als 1 splitsbare
 		#	 waarde tussen aanhalingstekens met de optie --inopts, b.v. --inopts="-ss 60 -t 300"
 		# - ${uitopts1[@]}, ${uitopts2[@]} en ${uitopts[@]} : array met ffmpeg-opties te plaatsen na de "-i invoer"
-		#	van resp. de 1ste, de 2de en elke pass
-		#	- deze opties wordt alleen gebruikt in het script, als de parameter --uitopts
-		#	 wordt opgegeven met waarde "1:"  of "2:" voor pass 1 of 2, of zonder waarde voor elke pass.
-		#	- meerdere parameters (zie "Meervoudige parameters"), kunnen soms opgegeven worden als 1 waarde
-		#	 tussen aanhalingstekens met de optie --uitopts, b.v. --uitopts="-map V -map a:1 -sn -pix_fmt yuv420p"
+		#	van resp. de 1ste, de 2de of elke pass
+		#	- verder zoals inopts
 		# - ${filteropts1[@]}, ${filteropts2[@]} en ${filteropts[@]} : array met ffmpeg-opties te plaatsen na de --uitopts
-		#	 van resp. de 1ste, de 2de en elke pass.
-		#	- deze opties wordt alleen gebruikt in het script, als de parameter --filteropts
-		#	 wordt opgegeven met waarde "1:"  of "2:" voor pass 1 of 2, of zonder waarde voor elke pass.
-		#	- meerdere parameters (zie "Meervoudige parameters"), kunnen soms opgegeven worden als 1 waarde
-		#	 tussen aanhalingstekens met de optie --filteropts, b.v.
-		#		--filteropts="-filter_complex [0:v]yadif[tmp],[tmp][0:s]overlay"
+		#	 van resp. de 1ste, de 2de of elke pass.
+		#	- verder zoals inopts
 		# - ${postopts1[@]}, ${postopts2[@]} en ${postopts1[@]} : array met ffmpeg-opties te plaatsen na "uitvoerbestand"
-		#	van resp. de 1ste, de 2de en elke pass, b.v. om nog een 2de uitvoer te doen van dezelfde invoer
-		#	- deze opties wordt alleen gebruikt in het script, als de parameter --postopts
-		#	 wordt opgegeven met waarde "1:"  of "2:" voor pass 1 of 2, of zonder waarde voor elke pass.
-		#	- meerdere parameters (zie "Meervoudige parameters"), kunnen soms opgegeven worden als 1 waarde
-		#	 tussen aanhalingstekens met de optie --postopts, b.v. --postopts="2: -map s:0 ondertitels.srt"
+		#	van resp. de 1ste, de 2de of elke pass, b.v. om nog een 2de uitvoer te doen van dezelfde invoer
+		#	- verder zoals inopts
 		help
 		cat <<-"help"
 		#
@@ -188,9 +188,9 @@ function main()
 	'--dryrun')
 		if [ -v modus_help_optie ]
 		then cat <<-help
-			#	$1 : doorloopt script, bepaalt b.v. ook video bitrates, maar voert ffmpeg niet uit, maar echoot de
-			#		samengestelde ffmpeg-opdrachten, zodat ge die met gepast toevoegen van quotes en evt. bijkomend
-			#		maatwerk naar een opdrachtlijn kunt kopiëren.
+			#	$1 : doorloopt script, bepaalt b.v. ook video bitrates, maar echoot de samengestelde ffmpeg-
+			#		opdrachten zonder ze uit te voeren, zodat ge die met gepast toevoegen van quotes en evt.
+			#		bijkomend maatwerk naar een opdrachtlijn kunt kopiëren.
 			help
 		else
 			# OPM: als dryrun unset is, faalt nice met expansie 'nice "$dryrun" ...' op lege positional parameters;
@@ -201,11 +201,14 @@ function main()
 	'--pid')
 		if [ -v modus_help_optie ]
 		then cat <<-help
-			#	$1=id : dit script heeft sommige tijdelijke bestanden nodig, zoals statistiekbestanden van de 1ste doorgang,
-			#		en een script voor de concat demuxer. Om dit script gelijktijdig te kunnen uitvoeren in meerdere
-			#		processen, wordt het process id \$\$ opgenomen in de naam van die bestanden. Met deze optie kan een 
-			#		andere identificatie opgegeven worden, best een unieke, b.v. om de statistiekbestanden van een 
-			#		eerdere sessie te hergebruiken, en zonder ':' in (t.b.v. -x265-params).
+			#	$1=id : geef een andere identificatie dan process ID voor statistiekbestanden van pass 1 of het
+			#		script voor de concat demuxer.
+			help
+			[ "$modus_help_optie" != "kort" ] && cat <<-help
+			#		Om dit script gelijktijdig te kunnen uitvoeren in meerdere processen, wordt het process id
+			#		\$\$ opgenomen in de naam van die bestanden. Met deze optie kan een andere identificatie opgegeven
+			#		worden, best een unieke, b.v. om met "--pass2only" de statistiekbestanden van een eerdere sessie
+			#		te hergebruiken. Omwille van de syntax van "-x265-params", bevat "id" best geen ':'.
 			help
 		else
 			pid="$2"
@@ -272,7 +275,7 @@ function main()
 	'--inopts')
 		if [ -v modus_help_optie ]
 		then cat <<-help
-			#	$1[="optie-strings voor invoer"] : 1 of meerdere ffmpeg-opties voor de interpretatie van het invoerbestand,
+			#	$1[="optie_strings_voor_invoer"] : 1 of meerdere ffmpeg-opties voor de interpretatie van het invoerbestand,
 			#		volgens de beschrijving onder de sectie "Meervoudige parameters".
 			help
 			[ "$modus_help_optie" != "kort" ] && cat <<-help
@@ -280,6 +283,10 @@ function main()
 			#		die begint met de tekens "1:" dan wel "2:".
 			# 		De "$1" opties worden in de ffmpeg-opdracht ingevoegd voor de naam van het invoer-bestand.
 			#		Meerdere "$1" parameters worden in opgegeven volgorde na elkaar toegevoegd.
+			#		- ffmpeg-vertaling, naargelang doorgang 1 of 2 : \$optie_strings_voor_invoer, ontdaan van evt. "1:" of "2:"
+			#		 en opgesplitst op de spaties.
+			#		- ffmpeg-vertaling zonder optie_strings_voor_invoer, of met enkel "1:" of "2:": de letterlijke elementen
+			#		 van de arrays "${invoeropts1[@]}", "${invoeropts2[@]}" resp. "${invoeropts2[@]}", 
 			#	
 			#		Voorbeelden van invoeropties (meestal enkel zinvol in beide de doorgangen):
 			#		---------------------------
@@ -424,7 +431,7 @@ function main()
 	'--uitopts')
 		if [ -v modus_help_optie ]
 		then cat <<-help
-			#	$1[="optie-strings voor uitvoer"] : 1 of meerdere ffmpeg-opties voor het aanmaken van het uitvoerbestand,
+			#	$1[="optie_strings_voor_uitvoer"] : 1 of meerdere ffmpeg-opties voor het aanmaken van het uitvoerbestand,
 			#		volgens de beschrijving onder de sectie "Meervoudige parameters".
 			help
 			[ "$modus_help_optie" != "kort" ] && cat <<-help
@@ -433,6 +440,10 @@ function main()
 			# 		De "$1" opties worden in de ffmpeg-opdracht ingevoegd direct na de naam van het invoer-bestand, zodat ge met
 			#		"$1" evt. ook extra invoerbestanden kunt opgeven.
 			#		Meerdere "$1" parameters worden in opgegeven volgorde na elkaar toegevoegd.
+			#		- ffmpeg-vertaling, naargelang doorgang 1 of 2 : \$optie_strings_voor_uitvoer, ontdaan van evt. "1:" of "2:"
+			#		 en opgesplitst op de spaties.
+			#		- ffmpeg-vertaling zonder optie_strings_voor_uitvoer, of met enkel "1:" of "2:": de letterlijke elementen
+			#		 van de arrays "${uitvoeropts1[@]}", "${uitvoeropts2[@]}" resp. "${uitvoeropts2[@]}", 
 			#	
 			#		Voorbeelden van uitvoeropties (meestal enkel zinvol in beide de doorgangen):
 			#		-----------------------------
@@ -486,12 +497,12 @@ function main()
 			#		 It will then duplicate or drop frames to keep that rate."
 			#		- Variabele framerate is nochtans een van de sterke compressie-kansen van h.264 en h.265. Zowat elk
 			#		 containerformaat kan variabele framerate aan, dus dit script gebruikt standaard een ffmpeg-optie om de
-			#		 originele frame timestamps en framerate te bewaren. Deze optie $1 laat dat achterwege.
-			#		- Bronnen met variabele framerate zijn te herkennen met aan fps!=tbr (ffprobe) of
-			#		 r_frame_rate!=avg_frame_rate (ffprobewaarden).
-			#		- Eigenlijk is r_frame_rate geen framerate:  het is "the least common multiple of all framerates in the stream".
-			#		 en daardoor "the lowest framerate with which all timestamps can be represented accurately". Het is dus een
-			#		 veelvoud van zowel de originele framerate als van elke andere feitelijke framerate in de bron.
+			#		 originele frame timestamps en framerate te bewaren, ook variabele. Deze optie $1 laat dat achterwege.
+			#		- Bronnen met variabele framerate zijn te herkennen met aan fps != tbr (ffprobe) of
+			#		 r_frame_rate != avg_frame_rate (ffprobewaarden). Eigenlijk is r_frame_rate geen framerate:  het is 
+			#		 "the least common multiple of all framerates in the stream", en daardoor "the lowest framerate with which
+			#		 all timestamps can be represented accurately". Het is dus een veelvoud van elke andere feitelijke
+			#		 framerate in de bron, en mogelijk veel te hoog om te misbruiken als nieuwe vaste framerate.
 			#		- ffmpeg-vertaling : bij ontstentenis "-vsync vfr"
 			help
 		else
@@ -502,7 +513,7 @@ function main()
 		# OPM filters kunnen ook bij --uitopts opgegeven worden, maar vooral voor buiten-script arrays hou ik ze liever apart
 		if [ -v modus_help_optie ]
 		then cat <<-help
-			#	$1[="optie-strings voor filters"] : 1 of meerdere ffmpeg-opties voor het filteren van de invoer 
+			#	$1[="optie_strings_voor_filters"] : 1 of meerdere ffmpeg-opties voor het filteren van de invoer 
 			#		(geluid en/of video), volgens de beschrijving onder de sectie "Meervoudige parameters".
 			help
 			[ "$modus_help_optie" != "kort" ] && cat <<-help
@@ -514,6 +525,10 @@ function main()
 			#		Filteropties kunnen ook bij --uitopts geplaatst worden, of bij de string voor de geluid- of video-encoder,
 			#		maar door de soms ingewikkelde filter-opties een eigen optienaam te geven, is het gemakkelijker om eenvoudige
 			#		opties elders uit te testen en weer weg te laten.
+			#		- ffmpeg-vertaling, naargelang doorgang 1 of 2 : \$optie_strings_voor_filters, ontdaan van evt. "1:" of "2:"
+			#		 en opgesplitst op de spaties.
+			#		- ffmpeg-vertaling zonder optie_strings_voor_filters, of met enkel "1:" of "2:": de letterlijke elementen
+			#		 van de arrays "${filteropts1[@]}", "${filteropts2[@]}" resp. "${filteropts2[@]}", 
 			#	
 			#		Voorbeelden van geluid-filters (meestal enkel zinvol in 2de doorgang:
 			#		-----------------------------
@@ -596,7 +611,7 @@ function main()
 			#		Dit is de default encoder van 2passffmpeg, maar met deze parameter kunnen extra opties opgegeven worden.
 			help
 			[ "${1::5}" = "--lib" -a "$modus_help_optie" = "lang" -o "$modus_help_optie" = "optie" ] && cat <<-help
-			#		- ffmpeg-vertaling : "-c:v libx265 \$ffmpeg_opties"
+			#		- ffmpeg-vertaling : "-c:v libx265 \$ffmpeg_opties" (die laatste opgesplitst op de spaties)
 			help
 		else
 			# is hoger ingesteld default, maar met expliciete optie kunnen we extra parameters opgeven
@@ -610,7 +625,7 @@ function main()
 			#	$1=["ffmpeg_opties"] : hercodeer video naar h.264-formaat met de libx264 Advanced Video Codec.
 			help
 			[ "${1::5}" = "--lib" -a "$modus_help_optie" = "lang" -o "$modus_help_optie" = "optie" ] && cat <<-help
-			#		- ffmpeg-vertaling : "-c:v libx264 \$ffmpeg_opties"
+			#		- ffmpeg-vertaling : "-c:v libx264 \$ffmpeg_opties" (die laatste opgesplitst op de spaties)
 			help
 		else
 			vcodec=("-c:v" "libx264" $2)	# laat $2 uiteenvallen in onderdelen (tss. "" op opdrachtlijn)
@@ -624,7 +639,7 @@ function main()
 			help
 			[ "${1::5}" = "--lib" -a "$modus_help_optie" = "lang" -o "$modus_help_optie" = "optie" ] && cat <<-help
 			#		- OPM: mijn eigen ffmpeg is ZONDER libxvid gecompileerd
-			#		- ffmpeg-vertaling : "-c:v libxvid \$ffmpeg_opties"
+			#		- ffmpeg-vertaling : "-c:v libxvid \$ffmpeg_opties" (die laatste opgesplitst op de spaties)
 			help
 		else
 			vcodec=("-c:v" "libxvid" $2)	# laat $2 uiteenvallen in onderdelen (tss. "" op opdrachtlijn)
@@ -638,7 +653,7 @@ function main()
 			help
 			[ "$modus_help_optie" != "kort" ] && cat <<-help
 			#		- OPM: mijn eigen ffmpeg is ZONDER libxvid gecompileerd
-			#		- ffmpeg-vertaling : "-c:v mpeg4 -vtag XVID \$ffmpeg_opties"
+			#		- ffmpeg-vertaling : "-c:v mpeg4 -vtag XVID \$ffmpeg_opties" (die laatste opgesplitst op de spaties)
 			help
 		else
 			vcodec=("-c:v" "mpeg4" "-vtag" "XVID" $2)	# laat $2 uiteenvallen in onderdelen (tss. "" op opdrachtlijn)
@@ -843,7 +858,7 @@ function main()
 			[ "${1::5}" = "--lib" -a "$modus_help_optie" = "lang" -o "$modus_help_optie" = "optie" ] && cat <<-help
 			#		- Variabele bitrate instellen met --avbr.
 			#		- libfdk_aac is NIET beschikbaar in Ubuntu's standaard-compilatie van ffmpeg
-			#		- ffmpeg-vertaling : "-c:a libfdk_aac \$ffmpeg_opties"
+			#		- ffmpeg-vertaling : "-c:a libfdk_aac \$ffmpeg_opties" (die laatste opgesplitst op de spaties)
 			#
 			#		Voorbeeld van extra opties:
 			#		--------------------------
@@ -866,6 +881,7 @@ function main()
 			#		- OPM: ffmpeg's eigen aac ondersteunt de profielen aac-he1 en aac-he2 NIET
 			#		- Zie verder beschrijving --libfdk_aac
 			#		- ffmpeg-vertaling : "-c:a libfdk_aac \$ffmpeg_opties" OF "-c:a aac \$ffmpeg_opties"
+			#		  (ffmpeg_opties opgesplitst op de spaties)
 			help
 		else
 			acodec=("-c:a" 'aac' $2)
@@ -883,7 +899,7 @@ function main()
 			help
 			[ "${1::5}" = "--lib" -a "$modus_help_optie" = "lang" -o "$modus_help_optie" = "optie" ] && cat <<-help
 			#		- Variabele bitrate instellen met --avbr.
-			#		- ffmpeg-vertaling : "-c:a libmp3lame \$ffmpeg_opties"
+			#		- ffmpeg-vertaling : "-c:a libmp3lame \$ffmpeg_opties" (die laatste opgesplitst op de spaties)
 			help
 		else
 			acodec=("-c:a" 'libmp3lame' $2)	# laat $2 uiteenvallen in onderdelen (tss. "" op opdrachtlijn)
@@ -924,21 +940,21 @@ function main()
 			help
 			[ "$modus_help_optie" != "kort" ] && cat <<-help
 			#		Dit is afhankelijk van de gekozen encoder:
-			#		- Lame mp3 (--avbr: gemiddeld/van-tot in kbps)
-			#		  --avbr=0: 245/220-260, =1: 225/190-250, =2: 190/170-210, =3: 175/150-195, =4: 165/140-185,
-			#		  --avbr=5: 130/120-150, =6: 115/100-130, =7: 100/ 80-120, =8:  85/ 70-105, =9:  65/ 45- 85
-			#		  - zie ook "ffmpeg truuks en commandos" sectie "mp3 Lame VBR opties": :
 			#		- fdk_aac met --he2 (high efficiency profile 2) typische kbps voor stereo:
 			#		  --avbr=0 : (default) constante bitrate, extra op te geven als b.v. --libfdk_aac="-b:a 24k"
-			#		  --avbr=1 : 16kbps, =2 : 18kbps, =3 : 20kbps
+			#		  --avbr=1 : 16kbps, --avbr=2 : 18kbps, --avbr=3 : 20kbps
 			#		- aac en fdk_aac (default profile) typische kbps voor mono, stereo en 5.1 (=2x mono + 2x stereo) :
 			#		  --avbr=0 : (default) constante bitrate, extra op te geven als b.v. --aac="-b:a 128k"
-			#		  --avbr=1 : mono  32kbps, stereo 2x 20kbps =  40kbps, 5.1 2x  32kbps + 2x2x 20kbps = 144kbps
-			#		  --avbr=2 : mono  40kbps, stereo 2x 32kbps =  64kbps, 5.1 2x  40kbps + 2x2x 32kbps = 208kbps
-			#		  --avbr=3 : mono  56kbps, stereo 2x 48kbps =  96kbps, 5.1 2x  56kbps + 2x2x 48kbps = 304kbps
-			#		  --avbr=4 : mono  72kbps, stereo 2x 64kbps = 128kbps, 5.1 2x  72kbps + 2x2x 64kbps = 400kbps
-			#		  --avbr=5 : mono 112kbps, stereo 2x 96kbps = 192kbps, 5.1 2x 112kbps + 2x2x 96kbps = 608kbps
+			#		  --avbr=1 : mono  32kbps, stereo  40kbps, 5.1 144kbps
+			#		  --avbr=2 : mono  40kbps, stereo  64kbps, 5.1 208kbps
+			#		  --avbr=3 : mono  56kbps, stereo  96kbps, 5.1 304kbps
+			#		  --avbr=4 : mono  72kbps, stereo 128kbps, 5.1 400kbps
+			#		  --avbr=5 : mono 112kbps, stereo 192kbps, 5.1 608kbps
 			#		  - zie ook http://wiki.hydrogenaud.io/index.php?title=Fraunhofer_FDK_AAC#Bitrate_Modes
+			#		- Lame mp3 (--avbr: gemiddeld/van-tot in kbps)
+			#		  --avbr=0: 245/220-260| ~=1: 225/190-250| ~=2: 190/170-210| ~=3: 175/150-195| ~=4: 165/140-185,
+			#		  --avbr=5: 130/120-150| ~=6: 115/100-130| ~=7: 100/ 80-120| ~=8:  85/ 70-105| ~=9:  65/ 45- 85
+			#		  - zie ook "ffmpeg truuks en commandos" sectie "mp3 Lame VBR opties": :
 			#		- ffmpeg-vertaling : "-vbr:a \$9"
 			help
 		else
