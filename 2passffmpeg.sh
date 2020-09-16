@@ -5,7 +5,7 @@ function main()
 { # met alles in een functie moeten we niet kiezen tss. return of exit, en kunnen we local variabelen gebruiken
   # OPM: local maakt evt. externe variabelen met dezelfde naam onzichtbaar, ook voor unset. Overigens verwijdert unset
   #  alleen de waarde van de locale naam, maar de naam blijft local, en bekend bij declare.
- local fc parms vcodec vidbitrate acodec avbr_lame avbr_aac avbr_he2aac ext doel longoptions xpassffmpeg_resetextglob getoptlongoptions tmpGetopt dryrun pid singlepass pass2only postopts_pass1_script postopts_pass2_script inopts_pass1_script inopts_pass2_script concat ext metadata chapters uitopts_pass1_script uitopts_pass2_script novfr filteropts_pass1_script filteropts_pass2_script vcodec vidbitrate bronbr rasterbr tune profile preset acodec avbr_aac avbr_he2aac avbr_lame audiorate he2 spraak surround invoer bronbestand1 bronnaam brondir uitvoer ffmpeg_overschrijven mv_overschrijven modus_help_optie channels qual_bit_rate total_audio_bit_rate bR geom_bit_rate bron_sample_rate x265params threadsffmpeg threads stats passparms
+ local fc parms vcodec vidbitrate acodec avbr_lame avbr_aac avbr_he2aac ext doel longoptions xpassffmpeg_resetextglob getoptlongoptions tmpGetopt dryrun pid singlepass pass2only postopts_pass1_script postopts_pass2_script inopts_pass1_script inopts_pass2_script concat ext metadata chapters uitopts_pass1_script uitopts_pass2_script novfr filteropts_pass1_script filteropts_pass2_script vcodec vidbitrate bronbr rasterbr tune vprofile preset acodec avbr_aac avbr_he2aac avbr_lame audiorate he2 spraak surround invoer bronbestand1 bronnaam brondir uitvoer ffmpeg_overschrijven mv_overschrijven modus_help_optie channels qual_bit_rate total_audio_bit_rate bR geom_bit_rate bron_sample_rate x265params threadsffmpeg threads stats passparms
 
  ## als ffmpeg extern gedefiniëerd is, nemen we die
  [ -z "$ffmpeg" ] && local ffmpeg="/opt/ffmpeg-dirk/ffmpeg"	## eigen build, zonder libxvid e.a. maar met mpeg4 (kan xvid
@@ -38,7 +38,7 @@ function main()
 	#  de waarde zijn van de optie, maar de "--" als dubbelzinnige afkorting van elke mogelijke "--optie".
 	# - Zet help als laatste in longoptions, zodat --help zichzelf aanroept als laatste --optie in modus_help_optie, en het
 	#  script afsluit; we zetten de help-tekst voor help niet bij case --help, maar aan het einde van case "--=Algemeen".
- longoptions='=Algemeen,dryrun,pid:,1pass,singlepass,pass2only,postopts::,=Invoeropties,inopts::,concat::,=Uitvoeropties,doel:,ext:,metadata,chapters,uitopts::,novfr,filteropts::,=Video-encoders,265::,x265::,h265::,libx265::,264::,x264::,h264::,libx264::,xvid::,libxvid::,mpeg4::,=Video-opties,vbr:,bronbr::,rasterbr::,tune:,profile:,preset:,x265params:,=Geluid-encoders,fdk_aac::,libfdk_aac::,aac::,mp3::,lame::,libmp3lame,acopy::,an,=Geluid-opties,avbr:,ar:,he2,spraak,surround,help'
+ longoptions='=Algemeen,dryrun,pid:,1pass,singlepass,pass2only,postopts::,=Invoeropties,inopts::,concat::,=Uitvoeropties,doel:,ext:,metadata,chapters,uitopts::,novfr,filteropts::,=Video-encoders,265::,x265::,h265::,libx265::,264::,x264::,h264::,libx264::,xvid::,libxvid::,mpeg4::,vcopy,=Video-opties,vbr:,bronbr::,rasterbr::,tune:,profile:,preset:,x265params:,=Geluid-encoders,fdk_aac::,libfdk_aac::,aac::,mp3::,lame::,libmp3lame,acopy,an,=Geluid-opties,avbr:,ar:,he2,spraak,surround,help'
  fc=-1
 	# activate extended globbing patterns like +(/) (is default ON, maar wil zeker zijn)
  xpassffmpeg_resetextglob=$(shopt -p extglob)	# -p : print syntax to set current state
@@ -599,7 +599,7 @@ function main()
 			cat <<-help
 			# Elk van de video-encoder-parameters aanvaardt optioneel 1 of meerdere bijkomende ffmpeg-opties t.b.v. de
 			# encoder in de vorm --%encoder-naam%="[-ffmpegoptie [waarde]]...", volgens de beschrijving in de sectie
-			# "Meervoudige parameters".
+			# "Meervoudige parameters". Dit geldt natuurlijk niet voor de oneigenlijke encoder --vcopy.
 			# 
 			help
 		;;
@@ -658,6 +658,18 @@ function main()
 		else
 			vcodec=("-c:v" "mpeg4" "-vtag" "XVID" $2)	# laat $2 uiteenvallen in onderdelen (tss. "" op opdrachtlijn)
 			shift #shift ook $2
+		fi
+	;;
+	'--vcopy')
+		if [ -v modus_help_optie ]
+		then cat <<-help
+			#	$1 : kopiëer het bestaande videospoor zonder hercoderen. Deze keuze zet automatisch ook de optie --singlepass.
+			help
+			[ "$modus_help_optie" != "kort" ] && cat <<-help
+			#		- ffmpeg-vertaling : "-c:v copy"
+			help
+		else
+			vcodec=("-c:v" 'copy') singlepass=y
 		fi
 	;;
 	'--=Video-opties')
@@ -1137,8 +1149,13 @@ function main()
  fc=36
 	[[ ${#vprofile[@]} -le 0 || "${vprofile[1]}" =~ ^(baseline|main|high)$ ]] ||
 		{ >&2 echo -e "\e[1;31;107mERROR $fc: ongekende profile voor X.264: '${profile[1]}'\e[0m"; return "$fc"; }
- fi
+ elif [ "${vcodec[1]}" = "copy" ]
+ then
+		# voor vcodec copy geen andere video-opties
  fc=37
+	[ "$vidbitrate" -gt 0 -o -n "$bronbr" -o -n "$rasterbr" -o "${#tune[@]}" -gt 0 -o "${#vprofile[@]}" -gt 0 -o "${#preset[@]}" -gt 0 -o "${#x265params[@]}" -gt 0 ] && { >&2 echo -e "\e[1;31;107mERROR $fc: video-codec 'copy' strijdig met alle andere video opties\e[0m"; return "$fc"; } 
+ fi
+ fc=38
  [ "${singlepass,,}" = "y" -a "${pass2only,,}" = "y" ] && 
 	{ >&2 echo -e "\e[1;31;107mERROR $fc: opties --singlepass en --pass2only sluiten elkaar uit.\e[0m"; return "$fc"; }
  ## CONTROLE GELUID OPTIES
@@ -1167,7 +1184,7 @@ function main()
 	#	verwijder alle metadata: global, stream, chapter en program
  [ "$metadata,," = "y" ] || uitopts_pass2_script+=("-map_metadata:g" "-1" "-map_metadata:s" "-1" "-map_metadata:c" "-1" "-map_metadata:p" "-1")
 	#	bewaar variabele framerate
- [ "$novfr,," = "y" ] || uitopts_pass1_script+=("-vsync" "vfr") uitopts_pass2_script+=("-vsync" "vfr")
+ [ "${vcodec[1]}" = "copy" -o "$novfr,," = "y" ] || uitopts_pass1_script+=("-vsync" "vfr") uitopts_pass2_script+=("-vsync" "vfr")
  ## VERTALING VIDEO OPTIES
  if [ "${vcodec[1]}" = "libx265" ]
  then
@@ -1178,7 +1195,7 @@ function main()
 	[ ${#preset[@]} -le 0 ] && preset=("-preset" "slower") # is nog snel genoeg; evt. slow of medium kiezen voor HD
 	[ ${#vprofile[@]} -le 0 ] && vprofile=("-profile:v" "high") # is nog snel genoeg; evt. slow of medium kiezen voor HD
  fi
- if [ -z "$bronbr" -a -z "$rasterbr" -a "$vidbitrate" -le 0 ]
+ if [ -z "$bronbr" -a -z "$rasterbr" -a "$vidbitrate" -le 0 -a "${vcodec[1]}" != "copy" ]
  then
 	rasterbr="100"
  fi
@@ -1328,8 +1345,20 @@ function main()
  fi
 	# OPM: mpeg4 kan lage bitrate voor HD niet aan, geeft fout; libxvid negeert lage bitrate voor HD
  vidbitrate="$(((vidbitrate+500)/1000))"k	# naar decimale kilo
- vcodec+=("${preset[@]}" "${tune[@]}" "${vprofile[@]}" "-b:v" "$vidbitrate")
+ [ "${vcodec[1]}" != "copy" ] && vcodec+=("${preset[@]}" "${tune[@]}" "${vprofile[@]}" "-b:v" "$vidbitrate")
  ## VERTALING GELUID OPTIES
+ if [ "${he2,,}" = "y" ]
+ then
+	acodec+=("-vbr:a" "$avbr_he2aac") 
+		# forceer stereo als mono, door --spraak alsnog op te zetten: vermijdt dat we bij --he2 --spraak 2 keer -ac instellen
+	channels="$(ffprobewaarden a:0 channels "$bronbestand1")" && [ "$((channels))" = 1 ] && spraak=y
+ elif [ "${acodec[1]}" = "libfdk_aac" -o "${acodec[1]}" = "aac" ]
+ then
+	acodec+=("-vbr:a" "$avbr_aac") 
+ elif [ "${acodec[1]}" = "libmp3lame" ]
+ then
+	acodec+=("-q:a" "$avbr_lame")	# ffmpeg-optie "-q:a" wordt vertaald naar Lame-optie "-V"
+ fi
  if [ "${spraak,,}" = "y" ]
  then		# voor he2: de facto mono in stereo formaat, anders gewoon mono
 	[ "${he2,,}" = "y" ] && filteropts_pass2_script+=("-ac" "2" "-af" "pan=stereo|c0<c0+c1|c1<c0+c1") ||
@@ -1337,17 +1366,7 @@ function main()
  elif [ ! "${surround,,}" = "y" ]
  then
 		# forceer stereo als > 2 channels of als we aantal channels niet kunnen bepalen
-	channels="$(ffprobewaarden a:0 channels "$bronbestand1" >& /dev/null)" && [ "$((channels))" -le 2 ] || filteropts_pass2_script+=("-ac" "2")
- fi
- if [ "${he2,,}" = "y" ]
- then
-	acodec+=("-vbr:a" "$avbr_he2aac") 
- elif [ "${acodec[1]}" = "libfdk_aac" -o "${acodec[1]}" = "aac" ]
- then
-	acodec+=("-vbr:a" "$avbr_aac") 
- elif [ "${acodec[1]}" = "libmp3lame" ]
- then
-	acodec+=("-q:a" "$avbr_lame")	# ffmpeg-optie "-q:a" wordt vertaald naar Lame-optie "-V"
+	channels="$(ffprobewaarden a:0 channels "$bronbestand1")" && [ "$((channels))" -le 2 ] || filteropts_pass2_script+=("-ac" "2")
  fi
  if [ "${audiorate[1]}" = "2k" -o "${audiorate[1]}" = "1k" ]
  then	# verminder samplerate tot 1/2 of 1/3, maar ga niet onder 16k want dan krijgt ge al rap oude telefoonkwaliteit
