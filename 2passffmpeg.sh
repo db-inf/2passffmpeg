@@ -28,7 +28,7 @@ function main()
  acodec=("-c:a" "libfdk_aac")	# default geluid encoder en geluid opties (verzameld, enkel nodig voor pass 2)
  avbr_lame=6 avbr_aac=3 avbr_he2aac=2
  ext=mp4
- # --doel=xxx is directory voor uitvoer en voor evt. links naar scripts in ~/Documents/shellscripts/ExternalProcessControl
+ # --doel=xxx is directory voor uitvoer en voor evt. links naar scripts in https://github.com/db-inf/externe-procescontrole
  doel="/media/ramdisk"
  #doel="/media/sdata/WERK/downloads/_hercompressie"
 
@@ -114,6 +114,12 @@ function main()
 		#	- hercomprimeren en de 1ste uit een set aparte bitmap ondertitels invoegen in .mkv-bestand :
 		#	  $ . 2passffmpeg --ext=mkv --uitopts="2: -map 0:V -map 0:a -map 1:s:0 -c:s dvd_subtitle" ... \
 		#	     brondbestand -i bron.idx -i bron.sub
+		#	- een fragment hercomprimeren aan verschillende bitrates, om te vergelijken :
+		#	  $ for p in {60..100..5}%;do . 2passffmpeg.sh --inopts="-ss 5:00 -t 2:00 -noaccurate_seek" \
+		#	    --doel=/tmp --ext=$p.mp4 --bronbr=$p --rasterbr=$p --ac --preset=fast bron.mp4;done
+		#	- een fragment hercomprimeren met verschillende constant rate factors, om te vergelijken :
+		#	  $ for crf in {16..28..3};do . 2passffmpeg.sh --inopts="-ss 5:00 -t 2:00 -noaccurate_seek" \
+		#	    --doel=/tmp --ext=crf$crf.mp4 --1pass --x265="-crf $crf" --acopy --preset=fast bron.mp4;done
 		help
 		[ "$modus_help_optie" != "kort" ] && cat <<-"help"
 		#
@@ -134,9 +140,9 @@ function main()
 		#	 aanvang een leeg bestand aan met de doelnaam (touch), om een claim te leggen op die aflevering.
 		#	  $ epcdir="/media/_hercompressie" ext=mp4; for a in *.{mp4,m4v,avi,mov,wmv,mkv}; do \
 		#	    . "$epcdir/_pauze"* _pauzeterm1; \
-		#	    [ -f "$a" -a ! -f "$epcdir/${a%.*}.$ext" ] || continue; touch "$epcdir/${a%.*}.$ext"; \
-		#	    . ~/Documents/shellscripts/2passffmpeg.sh --doel="$epcdir" --ext="$ext" --bron=105% --raster=105% \
-		#	    --he2 --avbr=2 --ar=1k "$a";
+		#	    [ ! -f "$a" -o -f "$epcdir/${a%.*}.$ext" ] && continue || touch "$epcdir/${a%.*}.$ext"; \
+		#	    . ~/Documents/shellscripts/2passffmpeg.sh --doel="$epcdir" --ext="$ext" --he2 --avbr=2 --ar=1k \
+		#	    --bronbr=105% --rasterbr=105% "$a";
 		#	    done
 		#
 		# Bash variabelen
@@ -398,7 +404,7 @@ function main()
 			help
 		else
 	fc=12			# een prefix van de gekende formaten moet eindigen op een '.', zodat ffmpeg dat niet als deel van het doelvormaat beschouwt
-			[[ "$2" =~ ^(.*\.)?(mp4|mkv|avi)$ ]] && ext="$2" ||  { >&2 echo -e "\e[1;31;107mERROR $fc: niet ondersteund doelformaat $2\e[0m"; return "$fc"; }
+			[[ "$2" =~ ^(.*\.)?(mp4|m4v|mkv|avi)$ ]] && ext="$2" ||  { >&2 echo -e "\e[1;31;107mERROR $fc: niet ondersteund doelformaat $2\e[0m"; return "$fc"; }
 			shift #shift ook $2
 		fi
 	;;
@@ -544,13 +550,15 @@ function main()
 			#		- doe alsof input vierkante pixels heeft (sample aspect ratio); 'display aspect ratio' van output
 			#		  wordt sar x width / height:
 			#		  $1="-vf setsar=sar=1/1" :
+			#		- vergroot of verklein naar 1280 breed, met behoud van hoogte/breedte-verhouding :
+			#		  $1="-vf scale=1280:-1"
 			#		- high quality noise filter met veel opties, defaults zijn al zeer goed :
 			#		  $1="-vf hqdn3d"
 			#		- Adaptive Temporal Averaging Denoiser over 5 tot 129 frames (altijd oneven, default 9)
-			#		  $1="-vf atadenoise=s=5" : pver 5 frames, rest defaults
+			#		  $1="-vf atadenoise=s=5" : over 5 frames, rest defaults
 			#		  - beter dan de generieke optie "-nr integer" (noise reduction) van libavcodec (geen ffmpeg video filter)
-			#		- vergroot of verklein naar 1280 breed, met behoud van hoogte/breedte-verhouding :
-			#		  $1="-vf scale=1280:-1"
+			#		- Sharpen met fourier transfo, highpass filter, en inverse fourier transfo (squish(x) = 1/(1 + exp(4*x))
+			#		  $1="-vf fftfilt=dc_Y=0:weight_Y='1+squish(1-(Y+X)/100)'"
 			#		- leg het gebruikelijke pixelformaat op, o.a. om HuffYuv in andere gangbare encoders te comprimeren
 			#		  $1="-vf format=yuv420p" OF zijn alias $1="-pix_fmt yuv420p"
 			#		- kleur verwijderen :
@@ -577,6 +585,11 @@ function main()
 			#		- als bron 30.04-30.05 fps heeft, kan dat een lawine van waarschuwingen geven zoals
 			#		  "Past duration 0.992332 too large"; geef de invoer dan een vaste framerate met :
 			#		  $1="-filter:v fps=30"
+			#		- midden spiegelen en samenvoegen
+			#		  $1="-vf crop=iw/2:ih:iw/4:0,split[left][tmp];[tmp]hflip[right];[left][right]hstack"
+			#		  - OPM: gebruik deze video filter met ffplay, met hflip vervangen door iets nuttigs, om het effect van
+			#		   een filter te bestuderen.
+"
 			help
 		else
 			if [ "${2::2}" = "1:" ]
@@ -1178,7 +1191,7 @@ function main()
  [ "${spraak,,}" = "y" -a "${surround,,}" = "y" ] && 
 	{ >&2 echo -e "\e[1;31;107mERROR $fc: opties --spraak en --surround sluiten elkaar uit.\e[0m"; return "$fc"; }
  ## VERTALING OPTIES
- [ -z "$epcdir" ] && epcdir="$doel" #Zie ~/Documents/shellscripts/ExternalProcessControl
+ [ -z "$epcdir" ] && epcdir="$doel" #Zie https://github.com/db-inf/externe-procescontrole
 	#	verwijder chapters-metadata (titels, ...)
  [ "$chapters,," = "y" ] || uitopts_pass2_script+=("-map_chapters" "-1")
 	#	verwijder alle metadata: global, stream, chapter en program
@@ -1202,12 +1215,12 @@ function main()
  local bron_video_width bron_video_height bron_video_codec_name bron_video_codec_tag_string bron_video_bit_rate bron_video_avg_frame_rate
  if [ -n "$bronbr" -o -n "$rasterbr" ]
  then
-	eval $(ffprobewaarden V width,height,codec_name,codec_tag_string,bit_rate,avg_frame_rate "$bronbestand1" | sed -E 's/^/bron_video_/' )
+	eval $(ffprobewaarden V width,height,codec_name,codec_tag_string,bit_rate,avg_frame_rate "$bronbestand1" | sed -E 's|N/A|0|;s/^/bron_video_/' ) # vervang alle "N/A" ineens door 0, ze zijn toch nutteloos
 	qual_bit_rate=0
 	if [ -n "$bronbr" ]
 	then
 			# bepaal bitrate van video bron
-		bron_video_bit_rate="$((bron_video_bit_rate))"	# effectief numeriek of 0
+		bron_video_bit_rate="$((bron_video_bit_rate))"	# 0 i.p.v. o.a. ""
 		if [ "$bron_video_bit_rate" -le 0 ]	# b.v. mkv en webm streams hebben soms geen duration, en dus geen bit_rate
 		then
 				# 1. als bitrate geluid stream(s) wel bekend, die gewoon aftrekken van die van format
@@ -1332,7 +1345,7 @@ function main()
  fc=51
 		[ "$((geom_bit_rate))" -le 0 ] && { >&2 echo -e "\e[1;31;107mERROR $fc: kan aanbevolen video bitrate niet afleiden uit resolutie van de bron\e[0m"; return "$fc"; }
 	fi
-	echo -ne "\e[1;103m H.264-bitrate-equivalent van bron $(((qual_bit_rate+500)/1000))k - van raster $(((geom_bit_rate+500)/1000))k\e[0m"
+	echo -ne "\e[1;103mINFO : H.264-bitrate-equivalent ${bronbr%\%}% van bron $(((qual_bit_rate+500)/1000))k - ${rasterbr%\%}% van raster $(((geom_bit_rate+500)/1000))k\e[0m"
 		# qual_bit_rate = min(bronbr, rasterbr)
 		# - zet laagste niet-0 van geom_bit_rate en qual_bit_rate in qual_bit_rate
 	[ "$qual_bit_rate" -le 0 ] || [ "$geom_bit_rate" -gt 0 -a "$geom_bit_rate" -lt "$qual_bit_rate" ] && qual_bit_rate="$geom_bit_rate"
@@ -1407,10 +1420,11 @@ function main()
  then 
  fc=81
 		# OPM: orineel met -f "${ext/mkv/matroska}", alhoewel sommige containerformaten mislukken zonder geluid (-an) en
-		#  vele andere met hele hoop geluid (b.v. "-c:a copy") "-f rawvideo" is hopelijk robuuster, nog te zien welke
+		#  vele andere met hele hoop geluid (b.v. "-c:a copy") -f "rawvideo" is hopelijk robuuster, nog te zien welke
 		#  andere problemen dat geeft.
 	nice -n 20 "${dryrun[@]}" "$ffmpeg" -hide_banner "${threadsffmpeg[@]}" "${inopts_pass1_script[@]}" -i "${invoer[@]}" "${uitopts_pass1_script[@]}" "${filteropts_pass1_script[@]}" "${vcodec[@]}" "${passparms[@]}" -an -f "rawvideo" -y /dev/null "${postopts_pass1_script[@]}" ||
 		{ >&2 echo -e "\e[1;31;107mERROR $fc: Eerste doorgang van ffmpeg: foutcode $?\e[0m"; return "$fc"; }
+	[ -n "$dryrun" ] || echo -e "\e[1;103mINFO : statistiekgegevens van eerste doorgang in ${stats}\e[0m"
 	source "$epcdir/_pauze"*  "_pauze2" 2>/dev/null	# PROCESCONTROLE pauzepunt _pauze_2
  fi
  #	PASS 2 :
