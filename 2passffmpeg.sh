@@ -38,7 +38,7 @@ function main()
 	#  de waarde zijn van de optie, maar de "--" als dubbelzinnige afkorting van elke mogelijke "--optie".
 	# - Zet help als laatste in longoptions, zodat --help zichzelf aanroept als laatste --optie in modus_help_optie, en het
 	#  script afsluit; we zetten de help-tekst voor help niet bij case --help, maar aan het einde van case "--=Algemeen".
- longoptions='=Algemeen,dryrun,pid:,1pass,singlepass,pass2only,postopts::,=Invoeropties,inopts::,concat::,=Uitvoeropties,doel:,ext:,metadata,chapters,uitopts::,novfr,filteropts::,=Video-encoders,265::,x265::,h265::,libx265::,264::,x264::,h264::,libx264::,xvid::,libxvid::,mpeg4::,vcopy,=Video-opties,vbr:,bronbr::,rasterbr::,tune:,profile:,preset:,x265params:,=Geluid-encoders,fdk_aac::,libfdk_aac::,aac::,mp3::,lame::,libmp3lame,acopy,an,=Geluid-opties,avbr:,ar:,he2,spraak,surround,help'
+ longoptions='=Algemeen,dryrun,pid:,1pass,singlepass,pass2only,postopts::,=Invoeropties,inopts::,concat::,=Uitvoeropties,doel:,ext:,metadata,chapters,uitopts::,novfr,filteropts::,=Video-encoders,265::,x265::,h265::,libx265::,264::,x264::,h264::,libx264::,xvid::,libxvid::,mpeg4::,ffvhuff::,huffyuv::,vcopy,vn,=Video-opties,vbr:,bronbr::,rasterbr::,tune:,profile:,preset:,x265params:,=Geluid-encoders,fdk_aac::,libfdk_aac::,aac::,mp3::,lame::,libmp3lame::,flac::,pcm,acopy,an,=Geluid-opties,avbr:,ar:,he2,spraak,surround,help'
  fc=-1
 	# activate extended globbing patterns like +(/) (is default ON, maar wil zeker zijn)
  xpassffmpeg_resetextglob=$(shopt -p extglob)	# -p : print syntax to set current state
@@ -116,7 +116,7 @@ function main()
 		#	     brondbestand -i bron.idx -i bron.sub
 		#	- een fragment hercomprimeren aan verschillende bitrates, om te vergelijken :
 		#	  $ for p in {60..100..5}%;do . 2passffmpeg.sh --inopts="-ss 5:00 -t 2:00 -noaccurate_seek" \
-		#	    --doel=/tmp --ext=$p.mp4 --bronbr=$p --rasterbr=$p --ac --preset=fast bron.mp4;done
+		#	    --doel=/tmp --ext=$p.mp4 --bronbr=$p --rasterbr=$p --acopy --preset=fast bron.mp4;done
 		#	- een fragment hercomprimeren met verschillende constant rate factors, om te vergelijken :
 		#	  $ for crf in {16..28..3};do . 2passffmpeg.sh --inopts="-ss 5:00 -t 2:00 -noaccurate_seek" \
 		#	    --doel=/tmp --ext=crf$crf.mp4 --1pass --x265="-crf $crf" --acopy --preset=fast bron.mp4;done
@@ -136,8 +136,8 @@ function main()
 		#
 		# VOORBEELD
 		#	- een set afleveringen hercomprimeren: de opdracht kan in meerdere shells tegelijk uitgevoerd worden,
-		#	 met elk hun eigen processcontrole door de parameter _pauzeterm1 te veranderen. Elke sessie maakt bij
-		#	 aanvang een leeg bestand aan met de doelnaam (touch), om een claim te leggen op die aflevering.
+		#	 met elk hun eigen processcontrole door de parameter _pauzeterm1 te veranderen. Elke loop-iteratie
+		#	 maakt bij aanvang een leeg bestand met de doelnaam (touch), om beslag te leggen op die aflevering.
 		#	  $ epcdir="/media/_hercompressie" ext=mp4; for a in *.{mp4,m4v,avi,mov,wmv,mkv}; do \
 		#	    . "$epcdir/_pauze"* _pauzeterm1; \
 		#	    [ ! -f "$a" -o -f "$epcdir/${a%.*}.$ext" ] && continue || touch "$epcdir/${a%.*}.$ext"; \
@@ -404,7 +404,7 @@ function main()
 			help
 		else
 	fc=12			# een prefix van de gekende formaten moet eindigen op een '.', zodat ffmpeg dat niet als deel van het doelvormaat beschouwt
-			[[ "$2" =~ ^(.*\.)?(mp4|m4v|mkv|avi)$ ]] && ext="$2" ||  { >&2 echo -e "\e[1;31;107mERROR $fc: niet ondersteund doelformaat $2\e[0m"; return "$fc"; }
+			[[ "$2" =~ ^(.*\.)?(mp4|m4v|mkv|avi|m4a|mp3|flac|aac|wav)$ ]] && ext="$2" ||  { >&2 echo -e "\e[1;31;107mERROR $fc: niet ondersteund doelformaat $2\e[0m"; return "$fc"; }
 			shift #shift ook $2
 		fi
 	;;
@@ -612,11 +612,10 @@ function main()
 			cat <<-help
 			# Elk van de video-encoder-parameters aanvaardt optioneel 1 of meerdere bijkomende ffmpeg-opties t.b.v. de
 			# encoder in de vorm --%encoder-naam%="[-ffmpegoptie [waarde]]...", volgens de beschrijving in de sectie
-			# "Meervoudige parameters". Dit geldt natuurlijk niet voor de oneigenlijke encoder --vcopy.
+			# "Meervoudige parameters". Dit geldt natuurlijk niet voor de oneigenlijke encoders --vn en --vcopy.
 			# 
 			help
 		;;
-	# OPM: --vn en --vcopy, naar analogie met geluid opties, hebben geen zin, want dan hebben we geen 2-pass ffmpeg van doen.
 	'--265'|'--x265'|'--h265'|'--libx265')
 		if [ -v modus_help_optie ]
 		then [ "${1::5}" != "--lib" -a "$modus_help_optie" != "optie" ] && echo -e "#\t$1" || cat <<-help
@@ -662,7 +661,7 @@ function main()
 	'--mpeg4')
 		if [ -v modus_help_optie ]
 		then cat <<-help
-			#	$1=["ffmpeg_opties"] : hercodeer video naar h.263-formaat met ffmpeg''s eigen mpeg4 codec, met XviD als fourCC.
+			#	$1=["ffmpeg_opties"] : hercodeer video naar h.263-formaat met ffmpeg's eigen mpeg4 codec, met XviD als fourCC.
 			help
 			[ "$modus_help_optie" != "kort" ] && cat <<-help
 			#		- OPM: mijn eigen ffmpeg is ZONDER libxvid gecompileerd
@@ -673,16 +672,70 @@ function main()
 			shift #shift ook $2
 		fi
 	;;
+	'--ffvhuff')
+		if [ -v modus_help_optie ]
+		then cat <<-help
+			#	$1=["ffmpeg_opties"] : hercodeer video naar ffmpeg's eigen variant van het verliesloos huffyuv-formaat.
+			#		Deze keuze zet automatisch ook de opties --singlepass en --novfr. 
+			help
+			[ "$modus_help_optie" != "kort" ] && cat <<-help
+			#		- OPM: --ext=mp4 (de default) aanvaardt geen video in dit formaat; --ext=mkv en --ext=avi wel.
+			#		- OPM: de opties $1="-pred median" en $1="-pred plane" leveren meestal beduidend kleinere
+			#		 bestanden dan de default "-pred left".
+			#		- ffmpeg-vertaling : "-c:v ffvhuff \$ffmpeg_opties" (die laatste opgesplitst op de spaties)
+			help
+		else
+			vcodec=("-c:v" "ffvhuff" $2)	# laat $2 uiteenvallen in onderdelen (tss. "" op opdrachtlijn)
+			singlepass=y novfr=y
+			shift #shift ook $2
+		fi
+	;;
+	'--huffyuv')
+		if [ -v modus_help_optie ]
+		then cat <<-help
+			#	$1=["ffmpeg_opties"] : hercodeer video naar verliesloos huffyuv-formaat.
+			#		Deze keuze zet automatisch ook de opties --singlepass en --novfr. 
+			help
+			[ "$modus_help_optie" != "kort" ] && cat <<-help
+			#		- OPM: --ext=mp4 (de default) aanvaardt geen video in dit formaat; --ext=mkv en --ext=avi wel.
+			#		- OPM: dit formaat ondersteunt het pixelformaat yuv420p niet, dat voor vele andere codecs nodig is.
+			#		 Daardoor is dit formaat, voor tussenbestanden die nog gehercodeerd zullen worden, minder geschikt
+			#		 dan --ffvhuff, dat bovendien beduidend kleinere bestanden geeft.
+			#		- OPM: de opties $1="-pred median" en $1="-pred plane" leveren meestal beduidend kleinere
+			#		 bestanden dan de default "-pred left".
+			#		- ffmpeg-vertaling : "-c:v huffyuv \$ffmpeg_opties" (die laatste opgesplitst op de spaties)
+			help
+		else
+			vcodec=("-c:v" "huffyuv" $2) 	# laat $2 uiteenvallen in onderdelen (tss. "" op opdrachtlijn)
+			singlepass=y novfr=y
+			shift #shift ook $2
+		fi
+	;;
 	'--vcopy')
 		if [ -v modus_help_optie ]
 		then cat <<-help
-			#	$1 : kopiëer het bestaande videospoor zonder hercoderen. Deze keuze zet automatisch ook de optie --singlepass.
+			#	$1 : kopiëer het bestaande videospoor zonder hercoderen. Deze keuze zet automatisch ook de opties
+			#		--singlepass en --novfr. 
 			help
 			[ "$modus_help_optie" != "kort" ] && cat <<-help
 			#		- ffmpeg-vertaling : "-c:v copy"
 			help
 		else
-			vcodec=("-c:v" 'copy') singlepass=y
+			vcodec=("-c:v" "copy")
+			singlepass=y novfr=y
+		fi
+	;;
+	'--vn')
+		if [ -v modus_help_optie ]
+		then cat <<-help
+			#	$1 : laat video volledig weg. Deze keuze zet automatisch ook de opties --singlepass en --novfr. 
+			help
+			[ "$modus_help_optie" != "kort" ] && cat <<-help
+			#		- ffmpeg-vertaling : "-vn"
+			help
+		else
+			vcodec=("-vn")
+			singlepass=y novfr=y
 		fi
 	;;
 	'--=Video-opties')
@@ -870,7 +923,7 @@ function main()
 			cat <<-help
 			# Elk van de audio-encoder-parameters aanvaardt optioneel 1 of meerdere bijkomende ffmpeg-opties t.b.v. de
 			# encoder in de vorm --%encoder-naam%="[-ffmpegoptie [waarde]]...", volgens de beschrijving in de sectie
-			# "Meervoudige parameters". Dit geldt natuurlijk niet voor de oneigenlijke encoders --an en --acopy.
+			# "Meervoudige parameters". Dit geldt natuurlijk niet voor de oneigenlijke encoders --pcm, --an en --acopy.
 			#
 			help
 		;;
@@ -931,6 +984,31 @@ function main()
 			shift #shift ook $2
 		fi
 	;;
+	'--flac')
+		if [ -v modus_help_optie ]
+		then cat <<-help
+			#	$1=["ffmpeg_opties"] : hercodeer geluid naar verliesloos flac-formaat.
+			help
+			[ "$modus_help_optie" != "kort" ] && cat <<-help
+			#		- ffmpeg-vertaling : "-c:a flac \$ffmpeg_opties" (die laatste opgesplitst op de spaties)
+			help
+		else
+			acodec=("-c:a" 'flac' $2)	# laat $2 uiteenvallen in onderdelen (tss. "" op opdrachtlijn)
+			shift #shift ook $2
+		fi
+	;;
+	'--pcm')
+		if [ -v modus_help_optie ]
+		then cat <<-help
+			#	$1 : hercodeer geluid naar verliesloos pcm-formaat.
+			help
+			[ "$modus_help_optie" != "kort" ] && cat <<-help
+			#		- ffmpeg-vertaling : "-c:a pcm_s16le"
+			help
+		else
+			acodec=("-c:a" 'pcm_s16le')
+		fi
+	;;
 	'--acopy')
 		if [ -v modus_help_optie ]
 		then cat <<-help
@@ -940,7 +1018,7 @@ function main()
 			#		- ffmpeg-vertaling : "-c:a copy"
 			help
 		else
-			acodec=("-c:a" 'copy')
+			acodec=("-c:a" "copy")
 		fi
 	;;
 	'--an')
@@ -985,7 +1063,7 @@ function main()
 		else
 	fc=16
 			# lame, aac en HE2 aac verschillende default, zolang we encoder niet weten wijzigen we de 3 variabelen
-			[[ "$2" =~ ^[0-9]$ ]] && avbr_aac="$2" && avbr_he2aac="$2" && avbr_lame="$2" || { >&2 echo -e "\e[1;31;107mERROR $fc: variabele geluid bitrate geen cijfer: '$2'\e[0m"; return "$fc"; } 
+			[[ "$2" =~ ^[0-9]$ ]] && avbr_aac="$2" avbr_he2aac="$2" avbr_lame="$2" || { >&2 echo -e "\e[1;31;107mERROR $fc: variabele geluid bitrate geen cijfer: '$2'\e[0m"; return "$fc"; } 
 			shift #shift ook $2
 		fi
 	 ;;
@@ -1162,11 +1240,11 @@ function main()
  fc=36
 	[[ ${#vprofile[@]} -le 0 || "${vprofile[1]}" =~ ^(baseline|main|high)$ ]] ||
 		{ >&2 echo -e "\e[1;31;107mERROR $fc: ongekende profile voor X.264: '${profile[1]}'\e[0m"; return "$fc"; }
- elif [ "${vcodec[1]}" = "copy" ]
+ elif [ "${vcodec[0]}" = "-vn" -o "${vcodec[1]}" = "copy" -o "${vcodec[1]}" = "ffvhuff" -o "${vcodec[1]}" = "huffyuv" ]
  then
-		# voor vcodec copy geen andere video-opties
+		# voor -vn of deze codecs geen andere video-opties
  fc=37
-	[ "$vidbitrate" -gt 0 -o -n "$bronbr" -o -n "$rasterbr" -o "${#tune[@]}" -gt 0 -o "${#vprofile[@]}" -gt 0 -o "${#preset[@]}" -gt 0 -o "${#x265params[@]}" -gt 0 ] && { >&2 echo -e "\e[1;31;107mERROR $fc: video-codec 'copy' strijdig met alle andere video opties\e[0m"; return "$fc"; } 
+	[ "$vidbitrate" -gt 0 -o -n "$bronbr" -o -n "$rasterbr" -o "${#tune[@]}" -gt 0 -o "${#vprofile[@]}" -gt 0 -o "${#preset[@]}" -gt 0 -o "${#x265params[@]}" -gt 0 ] && { >&2 echo -e "\e[1;31;107mERROR $fc: --vn of video-codec '${vcodec[1]}' strijdig met alle andere video opties\e[0m"; return "$fc"; } 
  fi
  fc=38
  [ "${singlepass,,}" = "y" -a "${pass2only,,}" = "y" ] && 
@@ -1190,14 +1268,15 @@ function main()
  fc=43
  [ "${spraak,,}" = "y" -a "${surround,,}" = "y" ] && 
 	{ >&2 echo -e "\e[1;31;107mERROR $fc: opties --spraak en --surround sluiten elkaar uit.\e[0m"; return "$fc"; }
+	# OPM: flac en pcm kennen geen bitrate-instelling, maar moeite niet om foutboodschap op te geven
  ## VERTALING OPTIES
  [ -z "$epcdir" ] && epcdir="$doel" #Zie https://github.com/db-inf/externe-procescontrole
 	#	verwijder chapters-metadata (titels, ...)
- [ "$chapters,," = "y" ] || uitopts_pass2_script+=("-map_chapters" "-1")
+ [ "${chapters,,}" = "y" ] || uitopts_pass2_script+=("-map_chapters" "-1")
 	#	verwijder alle metadata: global, stream, chapter en program
- [ "$metadata,," = "y" ] || uitopts_pass2_script+=("-map_metadata:g" "-1" "-map_metadata:s" "-1" "-map_metadata:c" "-1" "-map_metadata:p" "-1")
+ [ "${metadata,,}" = "y" ] || uitopts_pass2_script+=("-map_metadata:g" "-1" "-map_metadata:s" "-1" "-map_metadata:c" "-1" "-map_metadata:p" "-1")
 	#	bewaar variabele framerate
- [ "${vcodec[1]}" = "copy" -o "$novfr,," = "y" ] || uitopts_pass1_script+=("-vsync" "vfr") uitopts_pass2_script+=("-vsync" "vfr")
+ [ "${novfr,,}" = "y" ] || uitopts_pass1_script+=("-vsync" "vfr") uitopts_pass2_script+=("-vsync" "vfr")
  ## VERTALING VIDEO OPTIES
  if [ "${vcodec[1]}" = "libx265" ]
  then
@@ -1208,7 +1287,8 @@ function main()
 	[ ${#preset[@]} -le 0 ] && preset=("-preset" "slower") # is nog snel genoeg; evt. slow of medium kiezen voor HD
 	[ ${#vprofile[@]} -le 0 ] && vprofile=("-profile:v" "high") # is nog snel genoeg; evt. slow of medium kiezen voor HD
  fi
- if [ -z "$bronbr" -a -z "$rasterbr" -a "$vidbitrate" -le 0 -a "${vcodec[1]}" != "copy" ]
+ if [ -z "$bronbr" -a -z "$rasterbr" -a "$vidbitrate" -le 0 ] &&
+	! [ "${vcodec[0]}" = "-vn" -o "${vcodec[1]}" = "copy" -o "${vcodec[1]}" = "ffvhuff" -o "${vcodec[1]}" = "huffyuv" ]
  then
 	rasterbr="100"
  fi
@@ -1358,7 +1438,8 @@ function main()
  fi
 	# OPM: mpeg4 kan lage bitrate voor HD niet aan, geeft fout; libxvid negeert lage bitrate voor HD
  vidbitrate="$(((vidbitrate+500)/1000))"k	# naar decimale kilo
- [ "${vcodec[1]}" != "copy" ] && vcodec+=("${preset[@]}" "${tune[@]}" "${vprofile[@]}" "-b:v" "$vidbitrate")
+ [ "${vcodec[0]}" = "-vn" -o "${vcodec[1]}" = "copy" -o "${vcodec[1]}" = "ffvhuff" -o "${vcodec[1]}" = "huffyuv" ] ||
+	vcodec+=("${preset[@]}" "${tune[@]}" "${vprofile[@]}" "-b:v" "$vidbitrate")
  ## VERTALING GELUID OPTIES
  if [ "${he2,,}" = "y" ]
  then
