@@ -48,7 +48,7 @@ $ 2passffmpeg.sh --help
 #	     brondbestand -i bron.idx -i bron.sub
 #	- een fragment hercomprimeren aan verschillende bitrates, om te vergelijken :
 #	  $ for p in {60..100..5}%;do . 2passffmpeg.sh --inopts="-ss 5:00 -t 2:00 -noaccurate_seek" \
-#	    --doel=/tmp --ext=$p.mp4 --bronbr=$p --rasterbr=$p --ac --preset=fast bron.mp4;done
+#	    --doel=/tmp --ext=$p.mp4 --bronbr=$p --rasterbr=$p --acopy --preset=fast bron.mp4;done
 #	- een fragment hercomprimeren met verschillende constant rate factors, om te vergelijken :
 #	  $ for crf in {16..28..3};do . 2passffmpeg.sh --inopts="-ss 5:00 -t 2:00 -noaccurate_seek" \
 #	    --doel=/tmp --ext=crf$crf.mp4 --1pass --x265="-crf $crf" --acopy --preset=fast bron.mp4;done
@@ -66,8 +66,8 @@ $ 2passffmpeg.sh --help
 #
 # VOORBEELD
 #	- een set afleveringen hercomprimeren: de opdracht kan in meerdere shells tegelijk uitgevoerd worden,
-#	 met elk hun eigen processcontrole door de parameter _pauzeterm1 te veranderen. Elke sessie maakt bij
-#	 aanvang een leeg bestand aan met de doelnaam (touch), om een claim te leggen op die aflevering.
+#	 met elk hun eigen processcontrole door de parameter _pauzeterm1 te veranderen. Elke loop-iteratie
+#	 maakt bij aanvang een leeg bestand met de doelnaam (touch), om beslag te leggen op die aflevering.
 #	  $ epcdir="/media/_hercompressie" ext=mp4; for a in *.{mp4,m4v,avi,mov,wmv,mkv}; do \
 #	    . "$epcdir/_pauze"* _pauzeterm1; \
 #	    [ ! -f "$a" -o -f "$epcdir/${a%.*}.$ext" ] && continue || touch "$epcdir/${a%.*}.$ext"; \
@@ -335,7 +335,7 @@ $ 2passffmpeg.sh --help
 # ==============   
 # Elk van de video-encoder-parameters aanvaardt optioneel 1 of meerdere bijkomende ffmpeg-opties t.b.v. de
 # encoder in de vorm --%encoder-naam%="[-ffmpegoptie [waarde]]...", volgens de beschrijving in de sectie
-# "Meervoudige parameters". Dit geldt natuurlijk niet voor de oneigenlijke encoder --vcopy.
+# "Meervoudige parameters". Dit geldt natuurlijk niet voor de oneigenlijke encoders --vn en --vcopy.
 # 
 #	--265
 #	--x265
@@ -352,11 +352,28 @@ $ 2passffmpeg.sh --help
 #	--libxvid=["ffmpeg_opties"] : hercodeer video naar h.263-formaat met de libxvid codec.
 #		- OPM: mijn eigen ffmpeg is ZONDER libxvid gecompileerd
 #		- ffmpeg-vertaling : "-c:v libxvid $ffmpeg_opties" (die laatste opgesplitst op de spaties)
-#	--mpeg4=["ffmpeg_opties"] : hercodeer video naar h.263-formaat met ffmpeg''s eigen mpeg4 codec, met XviD als fourCC.
+#	--mpeg4=["ffmpeg_opties"] : hercodeer video naar h.263-formaat met ffmpeg's eigen mpeg4 codec, met XviD als fourCC.
 #		- OPM: mijn eigen ffmpeg is ZONDER libxvid gecompileerd
 #		- ffmpeg-vertaling : "-c:v mpeg4 -vtag XVID $ffmpeg_opties" (die laatste opgesplitst op de spaties)
+#	--ffvhuff=["ffmpeg_opties"] : hercodeer video naar ffmpeg's eigen variant van het verliesloos huffyuv-formaat.
+#		- OPM: --ext=mp4 (de default) aanvaardt geen video in dit formaat; --ext=mkv en --ext=avi wel.
+#		- OPM: de opties --ffvhuff="-pred median" en --ffvhuff="-pred plane" leveren meestal beduidend kleinere
+#		 bestanden dan de default "-pred left".
+#		- ffmpeg-vertaling : "-c:v ffvhuff $ffmpeg_opties" (die laatste opgesplitst op de spaties) en
+#		 --singlepass en --novfr
+#	--huffyuv=["ffmpeg_opties"] : hercodeer video naar verliesloos huffyuv-formaat.
+#		- OPM: --ext=mp4 (de default) aanvaardt geen video in dit formaat; --ext=mkv en --ext=avi wel.
+#		- OPM: dit formaat ondersteunt het pixelformaat yuv420p niet, dat voor vele andere codecs nodig is.
+#		 Daardoor is dit formaat, voor tussenbestanden die nog gehercodeerd zullen worden, minder geschikt
+#		 dan --ffvhuff, dat bovendien beduidend kleinere bestanden geeft.
+#		- OPM: de opties --huffyuv="-pred median" en --huffyuv="-pred plane" leveren meestal beduidend kleinere
+#		 bestanden dan de default "-pred left".
+#		- ffmpeg-vertaling : "-c:v huffyuv $ffmpeg_opties" (die laatste opgesplitst op de spaties) en
+#		 --singlepass en --novfr
 #	--vcopy : kopiëer het bestaande videospoor zonder hercoderen. Deze keuze zet automatisch ook de optie --singlepass.
-#		- ffmpeg-vertaling : "-c:v copy"
+#		- ffmpeg-vertaling : "-c:v copy" en --singlepass
+#	--vn : laat video volledig weg.
+#		- ffmpeg-vertaling : "-vn" en --singlepass
 #
 # Video-opties
 # ============   
@@ -456,7 +473,7 @@ $ 2passffmpeg.sh --help
 # ===============   
 # Elk van de audio-encoder-parameters aanvaardt optioneel 1 of meerdere bijkomende ffmpeg-opties t.b.v. de
 # encoder in de vorm --%encoder-naam%="[-ffmpegoptie [waarde]]...", volgens de beschrijving in de sectie
-# "Meervoudige parameters". Dit geldt natuurlijk niet voor de oneigenlijke encoders --an en --acopy.
+# "Meervoudige parameters". Dit geldt natuurlijk niet voor de oneigenlijke encoders --pcm, --an en --acopy.
 #
 #	--fdk_aac
 #	--libfdk_aac=["ffmpeg_opties"] : hercodeer geluid naar aac-formaat met libfdk_aac. Dit is de default
@@ -480,6 +497,10 @@ $ 2passffmpeg.sh --help
 #	--libmp3lame=["ffmpeg_opties"] : hercodeer geluid naar mp3-formaat met lame.
 #		- Variabele bitrate instellen met --avbr.
 #		- ffmpeg-vertaling : "-c:a libmp3lame $ffmpeg_opties" (die laatste opgesplitst op de spaties)
+#	--flac=["ffmpeg_opties"] : hercodeer geluid naar verliesloos flac-formaat.
+#		- ffmpeg-vertaling : "-c:a flac $ffmpeg_opties" (die laatste opgesplitst op de spaties)
+#	--pcm : hercodeer geluid naar verliesloos pcm-formaat.
+#		- ffmpeg-vertaling : "-c:a pcm_s16le"
 #	--acopy : kopiëer het bestaande geluid zonder hercoderen.
 #		- ffmpeg-vertaling : "-c:a copy"
 #	--an : laat geluid volledig weg.
