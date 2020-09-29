@@ -24,7 +24,7 @@ function main()
  # defaults (zeker nodig bij sourced script)
  pid=${$}	# process ID, tenzij anders per optie --pid
  vcodec=("-c:v" "libx265")	# default video encoder, zonder opties
- vidbitrate=0	# voor het gemak numeriek i.p.v. ""
+ vidbitrate=-10000	# voor het gemak numeriek i.p.v. ""; <0 is "unset", <=-1500 blijft dat ook na herleiding tot kilo
  acodec=("-c:a" "libfdk_aac")	# default geluid encoder en geluid opties (verzameld, enkel nodig voor pass 2)
  avbr_lame=6 avbr_aac=3 avbr_he2aac=2
  ext=mp4
@@ -785,6 +785,8 @@ function main()
 		then cat <<-help
 			#	$1[=999%] : leidt een nuttige max. gemiddelde video-bitrate af van breedte x hoogte en framerate van de
 			#		bron, rekening houdend met de bithonger van de doel-encoder (b.v. h.265 60% van h.264 60% van h.263).
+			#		Als geen enkele van de video-bitrate parameters opgegeven is, en geen single pass codering
+			#		gebeurt, word --rasterbr=100% verondersteld.
 			help
 			[ "$modus_help_optie" != "kort" ] && cat <<-help
 			#		De basis hiervoor is een aanbevolen tabel voor h.264 bitrates, die wordt toegeschreven aan Youtube.
@@ -1244,7 +1246,7 @@ function main()
  then
 		# voor -vn of deze codecs geen andere video-opties
  fc=37
-	[ "$vidbitrate" -gt 0 -o -n "$bronbr" -o -n "$rasterbr" -o "${#tune[@]}" -gt 0 -o "${#vprofile[@]}" -gt 0 -o "${#preset[@]}" -gt 0 -o "${#x265params[@]}" -gt 0 ] && { >&2 echo -e "\e[1;31;107mERROR $fc: --vn of video-codec '${vcodec[1]}' strijdig met alle andere video opties\e[0m"; return "$fc"; } 
+	[ "$vidbitrate" -ge 0 -o -n "$bronbr" -o -n "$rasterbr" -o "${#tune[@]}" -gt 0 -o "${#vprofile[@]}" -gt 0 -o "${#preset[@]}" -gt 0 -o "${#x265params[@]}" -gt 0 ] && { >&2 echo -e "\e[1;31;107mERROR $fc: --vn of video-codec '${vcodec[1]}' strijdig met alle andere video opties\e[0m"; return "$fc"; } 
  fi
  fc=38
  [ "${singlepass,,}" = "y" -a "${pass2only,,}" = "y" ] && 
@@ -1287,8 +1289,7 @@ function main()
 	[ ${#preset[@]} -le 0 ] && preset=("-preset" "slower") # is nog snel genoeg; evt. slow of medium kiezen voor HD
 	[ ${#vprofile[@]} -le 0 ] && vprofile=("-profile:v" "high") # is nog snel genoeg; evt. slow of medium kiezen voor HD
  fi
- if [ -z "$bronbr" -a -z "$rasterbr" -a "$vidbitrate" -le 0 ] &&
-	! [ "${vcodec[0]}" = "-vn" -o "${vcodec[1]}" = "copy" -o "${vcodec[1]}" = "ffvhuff" -o "${vcodec[1]}" = "huffyuv" ]
+ if [ -z "$bronbr" -a -z "$rasterbr" -a "$vidbitrate" -lt 0 -a "${singlepass,,}" != "y" ]
  then
 	rasterbr="100"
  fi
@@ -1433,13 +1434,14 @@ function main()
 	[ "${vcodec[1]}" = "libx265" ] && qual_bit_rate=$(($qual_bit_rate*7/10)) || # naar h.265-klasse
 		{ [ "${vcodec[1]}" = "libxvid" -o "${vcodec[1]}" = "mpeg4" ] && qual_bit_rate=$(($qual_bit_rate*10/7)); } # naar h.263-klasse
 		# vidbitrate = min(vidbitrate, qual_bit_rate)
-	[ "$vidbitrate" -le 0 ] || [ "$qual_bit_rate" -gt 0 -a "$qual_bit_rate" -lt "$vidbitrate" ] && vidbitrate="$qual_bit_rate"
+	[ "$vidbitrate" -lt 0 ] || [ "$qual_bit_rate" -gt 0 -a "$qual_bit_rate" -lt "$vidbitrate" ] && vidbitrate="$qual_bit_rate"
 	echo -e "\e[1;103m ... doel-bitrate $(((vidbitrate+500)/1000))k\e[0m"
  fi
 	# OPM: mpeg4 kan lage bitrate voor HD niet aan, geeft fout; libxvid negeert lage bitrate voor HD
- vidbitrate="$(((vidbitrate+500)/1000))"k	# naar decimale kilo
+ vidbitrate="$(((vidbitrate+500)/1000))"	# naar decimale kilo, maar nog zonder "k" t.b.v. numerieke test seffens
  [ "${vcodec[0]}" = "-vn" -o "${vcodec[1]}" = "copy" -o "${vcodec[1]}" = "ffvhuff" -o "${vcodec[1]}" = "huffyuv" ] ||
-	vcodec+=("${preset[@]}" "${tune[@]}" "${vprofile[@]}" "-b:v" "$vidbitrate")
+	vcodec+=("${preset[@]}" "${tune[@]}" "${vprofile[@]}")
+ [ "$vidbitrate" -lt 0 ] || vcodec+=("-b:v" "$vidbitrate"k)	# niet vergeten: nu pas kilo erbij
  ## VERTALING GELUID OPTIES
  if [ "${he2,,}" = "y" ]
  then
