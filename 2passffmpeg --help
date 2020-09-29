@@ -356,24 +356,25 @@ $ 2passffmpeg.sh --help
 #		- OPM: mijn eigen ffmpeg is ZONDER libxvid gecompileerd
 #		- ffmpeg-vertaling : "-c:v mpeg4 -vtag XVID $ffmpeg_opties" (die laatste opgesplitst op de spaties)
 #	--ffvhuff=["ffmpeg_opties"] : hercodeer video naar ffmpeg's eigen variant van het verliesloos huffyuv-formaat.
+#		Deze keuze zet automatisch ook de opties --singlepass en --novfr. 
 #		- OPM: --ext=mp4 (de default) aanvaardt geen video in dit formaat; --ext=mkv en --ext=avi wel.
 #		- OPM: de opties --ffvhuff="-pred median" en --ffvhuff="-pred plane" leveren meestal beduidend kleinere
 #		 bestanden dan de default "-pred left".
-#		- ffmpeg-vertaling : "-c:v ffvhuff $ffmpeg_opties" (die laatste opgesplitst op de spaties) en
-#		 --singlepass en --novfr
+#		- ffmpeg-vertaling : "-c:v ffvhuff $ffmpeg_opties" (die laatste opgesplitst op de spaties)
 #	--huffyuv=["ffmpeg_opties"] : hercodeer video naar verliesloos huffyuv-formaat.
+#		Deze keuze zet automatisch ook de opties --singlepass en --novfr. 
 #		- OPM: --ext=mp4 (de default) aanvaardt geen video in dit formaat; --ext=mkv en --ext=avi wel.
 #		- OPM: dit formaat ondersteunt het pixelformaat yuv420p niet, dat voor vele andere codecs nodig is.
 #		 Daardoor is dit formaat, voor tussenbestanden die nog gehercodeerd zullen worden, minder geschikt
 #		 dan --ffvhuff, dat bovendien beduidend kleinere bestanden geeft.
 #		- OPM: de opties --huffyuv="-pred median" en --huffyuv="-pred plane" leveren meestal beduidend kleinere
 #		 bestanden dan de default "-pred left".
-#		- ffmpeg-vertaling : "-c:v huffyuv $ffmpeg_opties" (die laatste opgesplitst op de spaties) en
-#		 --singlepass en --novfr
-#	--vcopy : kopiëer het bestaande videospoor zonder hercoderen. Deze keuze zet automatisch ook de optie --singlepass.
-#		- ffmpeg-vertaling : "-c:v copy" en --singlepass
-#	--vn : laat video volledig weg.
-#		- ffmpeg-vertaling : "-vn" en --singlepass
+#		- ffmpeg-vertaling : "-c:v huffyuv $ffmpeg_opties" (die laatste opgesplitst op de spaties)
+#	--vcopy : kopiëer het bestaande videospoor zonder hercoderen. Deze keuze zet automatisch ook de opties
+#		--singlepass en --novfr. 
+#		- ffmpeg-vertaling : "-c:v copy"
+#	--vn : laat video volledig weg. Deze keuze zet automatisch ook de opties --singlepass en --novfr. 
+#		- ffmpeg-vertaling : "-vn"
 #
 # Video-opties
 # ============   
@@ -392,6 +393,8 @@ $ 2passffmpeg.sh --help
 #		- ffmpeg-vertaling : "-b:v 999k" met de berekende waarde
 #	--rasterbr[=999%] : leidt een nuttige max. gemiddelde video-bitrate af van breedte x hoogte en framerate van de
 #		bron, rekening houdend met de bithonger van de doel-encoder (b.v. h.265 60% van h.264 60% van h.263).
+#		Als geen enkele van de video-bitrate parameters opgegeven is, en geen single pass codering
+#		gebeurt, word --rasterbr=100% verondersteld.
 #		De basis hiervoor is een aanbevolen tabel voor h.264 bitrates, die wordt toegeschreven aan Youtube.
 #		Optioneel wordt uiteindelijk het gekozen percentage genomen van wat uit de bron wordt afgeleid.
 #		Als ook een of meer van de andere video-bitrate parameters wordt opgegeven, wordt de uiteindelijke
