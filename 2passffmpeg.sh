@@ -1,7 +1,7 @@
 #!/bin/bash
 ##script om video te hercomprimeren naar h.265/h.264 of XviD, met geluid in mp3 of AAC
 ## GEBRUIK: 2passfmpeg.sh -h of 2passfmpeg.sh --help
-function main()
+function main_2passffmpeg()
 { # met alles in een functie moeten we niet kiezen tss. return of exit, en kunnen we local variabelen gebruiken
   # OPM: local maakt evt. externe variabelen met dezelfde naam onzichtbaar, ook voor unset. Overigens verwijdert unset
   #  alleen de waarde van de locale naam, maar de naam blijft local, en bekend bij declare.
@@ -559,6 +559,12 @@ function main()
 			#		  - beter dan de generieke optie "-nr integer" (noise reduction) van libavcodec (geen ffmpeg video filter)
 			#		- Sharpen met fourier transfo, highpass filter, en inverse fourier transfo (squish(x) = 1/(1 + exp(4*x))
 			#		  $1="-vf fftfilt=dc_Y=0:weight_Y='1+squish(1-(Y+X)/100)'"
+			#		- jpg-achtige fouten (vierkante blokjes en ringing) van te hoge compressie door encoders vóór h.264
+			#		  wegwerken met post-processing filter, en gebeurlijke onscherpte die daaruit volgt, compenseren in
+			#		  het helderheidskanaal, maar juist nog wat vergroten in kleurkanalen voor gelijkmatiger kleurverloop
+			#		  $1="-vf spp=quality=3:mode=hard:qp=5,unsharp=3:3:0.7:5:5:-0.5"
+			#		- kleuren opfrissen
+			#		  $1="-vf eq=saturation=1.4"
 			#		- leg het gebruikelijke pixelformaat op, o.a. om HuffYuv in andere gangbare encoders te comprimeren
 			#		  $1="-vf format=yuv420p" OF zijn alias $1="-pix_fmt yuv420p"
 			#		- kleur verwijderen :
@@ -812,7 +818,7 @@ function main()
 			#		Afhankelijk van de encoder zijn de volgende waarden mogelijk:
 			#		X.265: psnr, ssim, grain, zerolatency, fastdecode, animation
 			#		  - geen default
-			#		  - animation: improves encode quality for animated content
+			#		  - animation: improves encode quality for animated content (OPM: enkel in recentere libx265)
 			#		  - grain: for grainy (or really foggy) source where the grain should be kept and is not filtered
 			#		   out before encoding; neither retains nor eliminates grain, but prevents noticeable artifacts
 			#		   caused by uneven distribution of grain.
@@ -1225,8 +1231,8 @@ function main()
  fc=31
 	[[ ${#preset[@]} -le 0 || "${preset[1]}" =~ ^(ultrafast|superfast|veryfast|faster|fast|medium|slow|slower|veryslow|placebo)$ ]] ||
 		{ >&2 echo -e "\e[1;31;107mERROR $fc: ongekende preset voor X.265: '${preset[1]}'\e[0m"; return "$fc"; }
- fc=32
-	[[ ${#tune[@]} -le 0 || "${tune[1]}" =~ ^(psnr|ssim|grain|zerolatency|fastdecode|animation)$ ]] || # volgens 1 bron geen animation
+ fc=32	 # OPM in bionic en eigen ffmpeg nog geen -tune animation, in recentste John Vansickle al wel
+	[[ ${#tune[@]} -le 0 || "${tune[1]}" =~ ^(psnr|ssim|grain|zerolatency|fastdecode|animation)$ ]] ||
 		{ >&2 echo -e "\e[1;31;107mERROR $fc: ongekende tune voor X.265: '${tune[1]}'\e[0m"; return "$fc"; }
  fc=33
 	[[ ${#vprofile[@]} -le 0 || "${vprofile[1]}" =~ ^(main|main10|mainstillpicture|msp|main-intra|main10-intra|main444-8|main444-intra|main444-stillpicture|main422-10|main422-10-intra|main444-10|main444-10-intra|main12|main12-intra|main422-12|main422-12-intra|main444-12|main444-12-intra|main444-16-intra|main444-16-stillpicture)$ ]] ||
@@ -1296,7 +1302,7 @@ function main()
  local bron_video_width bron_video_height bron_video_codec_name bron_video_codec_tag_string bron_video_bit_rate bron_video_avg_frame_rate
  if [ -n "$bronbr" -o -n "$rasterbr" ]
  then
-	eval $(ffprobewaarden V width,height,codec_name,codec_tag_string,bit_rate,avg_frame_rate "$bronbestand1" | sed -E 's|N/A|0|;s/^/bron_video_/' ) # vervang alle "N/A" ineens door 0, ze zijn toch nutteloos
+	eval $(ffprobewaarden -q V width,height,codec_name,codec_tag_string,bit_rate,avg_frame_rate "$bronbestand1" | sed -E 's|N/A|0|;s/^/bron_video_/' ) # vervang alle "N/A" ineens door 0, ze zijn toch nutteloos
 	qual_bit_rate=0
 	if [ -n "$bronbr" ]
 	then
@@ -1306,10 +1312,10 @@ function main()
 		then
 				# 1. als bitrate geluid stream(s) wel bekend, die gewoon aftrekken van die van format
 				#	 som bit_rate geluid-kanalen; 0 is OK (geen geluid-kanalen). vervang N/A door -99999 om te testen op < 0
-			total_audio_bit_rate=$(( $(ffprobewaarden a bit_rate "$bronbestand1" | sed 's|N/A|-99999|' | paste -sd+) )) || total_audio_bit_rate=-99999
+			total_audio_bit_rate=$(( $(ffprobewaarden -q a bit_rate "$bronbestand1" | sed 's|N/A|-99999|' | paste -sd+) )) || total_audio_bit_rate=-99999
 			if [ "$total_audio_bit_rate" -ge 0 ]
 			then	# totale audio-bitrate aftrekken van bitrate van format
-				bron_video_bit_rate=$(ffprobewaarden bit_rate "$bronbestand1") &&
+				bron_video_bit_rate=$(ffprobewaarden -q bit_rate "$bronbestand1") &&
 					((bron_video_bit_rate-=total_audio_bit_rate)) || bron_video_bit_rate=0			
 			fi
 		fi
@@ -1318,7 +1324,7 @@ function main()
 				#	>>>video:4015069kB audio:0kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: unknown <<<
 			bron_video_bit_rate=$(ffmpeg -hide_banner -nostats -i "$bronbestand1" -c copy -map V -f null /dev/null |& tail -n 1 | sed -E 's/^video: *([0-9]+).*$/\1/') &&
 				# als numeriek, dan binaire kB naar bits, anders 0
-			bron_video_bit_rate=$((bron_video_bit_rate*8192/$(ffprobewaarden duration "$bronbestand1" | sed -E 's/.[0-9]*$//') )) ||
+			bron_video_bit_rate=$((bron_video_bit_rate*8192/$(ffprobewaarden -q duration "$bronbestand1" | sed -E 's/.[0-9]*$//') )) ||
 				bron_video_bit_rate=0
 		fi
 		if [ "$bron_video_bit_rate" -le 0 ]
@@ -1328,7 +1334,7 @@ function main()
 			bR=0	# korte naam werkt duidelijk sneller
 			. <(echo -n '((';ffprobe -v error -select_streams V -show_entries packet=size -of default=noprint_wrappers=1:nokey=1 "$bronbestand1" |
 				sed -E 's|^(.*)$|bR+=\1,|';echo 'bR*=8))';)
-			bron_video_bit_rate=$((bR/$(ffprobewaarden duration "$bronbestand1" | sed -E 's/.[0-9]*$//') )) ||
+			bron_video_bit_rate=$((bR/$(ffprobewaarden -q duration "$bronbestand1" | sed -E 's/.[0-9]*$//') )) ||
 				bron_video_bit_rate=0	# als numeriek, dan decimale kb naar bits, anders 0
 		fi
 		# OPM: getest en werkt, maar uitgeschakeld: als 3. geen resultaat geeft, deze ook niet want werkt met zelfde input
@@ -1350,7 +1356,7 @@ function main()
 			#				ffprobe -v error -select_streams V -show_entries packet=size -of default=noprint_wrappers=1:nokey=1 "$bronbestand1" |
 			#					tr '\n' '+';
 			#				echo -n "0)*8/";
-			#				ffprobewaarden duration "$bronbestand1";
+			#				ffprobewaarden -q duration "$bronbestand1";
 			#			} | bc ) || bron_video_bit_rate=0
 			#fi
 			# hogere kwaliteit dan bron zinloos, vertaald naar bitrate per encoder-klasse:  maximaal zinnige bitrate voor
@@ -1443,11 +1449,15 @@ function main()
 	vcodec+=("${preset[@]}" "${tune[@]}" "${vprofile[@]}")
  [ "$vidbitrate" -lt 0 ] || vcodec+=("-b:v" "$vidbitrate"k)	# niet vergeten: nu pas kilo erbij
  ## VERTALING GELUID OPTIES
+ if [ "${he2,,}" = "y" ] || [ ! "${spraak,,}" = "y" -a ! "${surround,,}" = "y" ]
+ then
+	channels="$(ffprobewaarden -q a:0 channels "$bronbestand1")"
+ fi
  if [ "${he2,,}" = "y" ]
  then
 	acodec+=("-vbr:a" "$avbr_he2aac") 
 		# forceer stereo als mono, door --spraak alsnog op te zetten: vermijdt dat we bij --he2 --spraak 2 keer -ac instellen
-	channels="$(ffprobewaarden a:0 channels "$bronbestand1")" && [ "$((channels))" = 1 ] && spraak=y
+	[ "$((channels))" = 1 ] && spraak=y
  elif [ "${acodec[1]}" = "libfdk_aac" -o "${acodec[1]}" = "aac" ]
  then
 	acodec+=("-vbr:a" "$avbr_aac") 
@@ -1462,12 +1472,12 @@ function main()
  elif [ ! "${surround,,}" = "y" ]
  then
 		# forceer stereo als > 2 channels of als we aantal channels niet kunnen bepalen
-	channels="$(ffprobewaarden a:0 channels "$bronbestand1")" && [ "$((channels))" -le 2 ] || filteropts_pass2_script+=("-ac" "2")
+	[ "$((channels))" -le 2 ] || filteropts_pass2_script+=("-ac" "2")
  fi
  if [ "${audiorate[1]}" = "2k" -o "${audiorate[1]}" = "1k" ]
  then	# verminder samplerate tot 1/2 of 1/3, maar ga niet onder 16k want dan krijgt ge al rap oude telefoonkwaliteit
  fc=61
-	bron_sample_rate=$(ffprobewaarden a:0 sample_rate "$bronbestand1") &&
+	bron_sample_rate=$(ffprobewaarden -q a:0 sample_rate "$bronbestand1") &&
 		case "$bron_sample_rate" in
 		48000) [ "${audiorate[1]}" = "1k" ] && audiorate[1]=16000 || audiorate[1]=24000;;
 		44100) [ "${audiorate[1]}" = "1k" ] && audiorate[1]=22050 || audiorate[1]=22050;;
@@ -1534,4 +1544,5 @@ function main()
  source "$epcdir/_uit"* 2>/dev/null	# PROCESCONTROLE uitzetten of slaapstand
  source "$epcdir/_slaap"*  2>/dev/null
 }
-main "$@"
+main_2passffmpeg "$@"
+unset main_2passffmpeg
